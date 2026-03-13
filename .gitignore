@@ -15,3 +15,4 @@ build.fish
 build.sh
 ozu.bash
 *.md
+subprojects/
