@@ -1,0 +1,17 @@
+.idea/
+doc/
+build/
+buildDir/
+meson-logs/
+meson-private/
+.meson-build-dir.txt
+*.o
+*.obj
+*.a
+*.so
+*.dylib
+*.out
+build.fish
+build.sh
+ozu.bash
+*.md

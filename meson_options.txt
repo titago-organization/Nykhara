@@ -1,0 +1,7 @@
+option('enable_tracy', type : 'boolean', value : false,
+       description : 'Enable Tracy profiler (requires C++ compiler)')
+option('enable_debug_profiling', type : 'boolean', value : false,
+       description : 'Enable Vulkan timestamp profiling')
+option('shader_dir', type : 'string', value : 'shaders',
+       description : 'Directory for compiled SPIR-V shaders at runtime')
+
