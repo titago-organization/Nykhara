@@ -1,0 +1,12 @@
+[submodule "include/volk"]
+	path = include/volk
+	url = https://github.com/zeux/volk
+[submodule "include/stb"]
+	path = include/stb
+	url = https://github.com/nothings/stb
+[submodule "include/luajit"]
+	path = include/luajit
+	url = https://github.com/LuaJIT/LuaJIT
+[submodule "include/nanosvg"]
+	path = include/nanosvg
+	url = https://github.com/memononen/nanosvg

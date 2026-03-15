@@ -39,6 +39,13 @@ fast_args = [
 inc_root    = include_directories('include')
 inc_src     = include_directories('src')
 
+inc_external = [
+    include_directories('include/volk'),
+    include_directories('include/stb'),
+    include_directories('include/luajit/src'),
+    include_directories('include/nanosvg/src'),
+]
+
 # ── Dependencies ──
 
 # Vulkan headers (we use volk, so no linking to libvulkan.so)
@@ -65,9 +72,9 @@ gbm   = dependency('gbm', required : true)
 luajit_install = meson.project_source_root() / 'subprojects' / 'luajit-install'
 luajit = dependency('luajit', required : false)
 if not luajit.found()
-    # Headers are already in include/ ; library was built from subprojects/luajit-src
+    # Headers are in include/luajit/src ; library was built from subprojects/luajit-src
     luajit = declare_dependency(
-        include_directories : inc_root,
+        include_directories : include_directories('include/luajit/src'),
         dependencies : cc.find_library('luajit-5.1',
             dirs : [luajit_install / 'lib'],
             required : true),
@@ -140,7 +147,7 @@ core_sources = [
     'src/core/nk_log.c',
 
     # volk implementation (compiled once)
-    'include/volk.c',
+    'include/volk/volk.c',
 
     # Vulkan render
     'src/render/vk_init.c',
@@ -151,6 +158,9 @@ core_sources = [
     'src/render/vk_render.c',
     'src/render/sdf_renderer.c',
     'src/render/font/font_atlas.c',
+    'src/render/font/ttf_loader.c',
+    'src/render/font/sdf_rasterizer.c',
+    'src/render/font/rect_packer.c',
 
     # Layout engine
     'src/layout/node.c',
@@ -208,7 +218,7 @@ core_deps = [
 
 libnykhara = shared_library('nykhara',
     all_sources,
-    include_directories : [inc_root, inc_src],
+    include_directories : [inc_root, inc_src] + inc_external,
     dependencies        : core_deps,
     c_args              : fast_args + ['-DVK_NO_PROTOTYPES', '-DVK_USE_PLATFORM_WAYLAND_KHR'],
     install             : true,
@@ -227,7 +237,7 @@ executable('nykhara-demo',
     'src/app/morph_demo.c',
     'src/app/fallback_ui.c',
     'src/app/fps_counter.c',
-    include_directories : [inc_root, inc_src],
+    include_directories : [inc_root, inc_src] + inc_external,
     dependencies        : [nykhara_dep],
     c_args              : fast_args + ['-DVK_NO_PROTOTYPES', '-DVK_USE_PLATFORM_WAYLAND_KHR'],
     install             : true,

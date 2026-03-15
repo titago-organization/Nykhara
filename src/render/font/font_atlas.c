@@ -1,22 +1,22 @@
 /**
  * @file font_atlas.c
- * @brief SDF font atlas — TTF → stb_truetype SDF → stb_rect_pack → atlas bitmap.
+ * @brief SDF font atlas orchestrator — loads TTF, rasterizes SDF glyphs,
+ *        packs them into a single R8 bitmap atlas.
+ *
+ * The heavy lifting is delegated to:
+ *   - ttf_loader   : TTF file I/O and font metric extraction
+ *   - sdf_rasterizer : per-glyph SDF rasterization
+ *   - rect_packer  : atlas rectangle bin-packing
  */
 
 #include "font_atlas.h"
+#include "ttf_loader.h"
+#include "sdf_rasterizer.h"
+#include "rect_packer.h"
 #include "../../core/nk_log.h"
 
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
-
-// stb_rect_pack MUST be included BEFORE stb_truetype to avoid type conflicts.
-// stb_truetype has internal stb_rect_pack shims; the real impl must come first.
-#define STB_RECT_PACK_IMPLEMENTATION
-#include <stb_rect_pack.h>
-
-#define STB_TRUETYPE_IMPLEMENTATION
-#include <stb_truetype.h>
 
 // Range: ASCII printable (32-126) — extend later for Unicode blocks
 #define FIRST_CHAR  32
@@ -26,97 +26,84 @@
 NkResult nk_font_atlas_build(NkFontAtlas *atlas, const char *ttf_path, float font_size) {
     memset(atlas, 0, sizeof(*atlas));
 
-    // Read TTF file
-    FILE *f = fopen(ttf_path, "rb");
-    if (!f) {
-        NK_LOG_ERROR("Cannot open font: %s", ttf_path);
-        return NK_ERROR_IO;
-    }
-    fseek(f, 0, SEEK_END);
-    long fsize = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    uint8_t *ttf_data = malloc((size_t)fsize);
-    fread(ttf_data, 1, (size_t)fsize, f);
-    fclose(f);
+    // Step 1: Load TTF and extract font metrics
+    NkTtfFont ttf;
+    NkResult r = nk_ttf_load(&ttf, ttf_path, font_size);
+    if (r != NK_SUCCESS) return r;
 
-    // Init stb_truetype
-    stbtt_fontinfo font;
-    if (!stbtt_InitFont(&font, ttf_data, stbtt_GetFontOffsetForIndex(ttf_data, 0))) {
-        NK_LOG_ERROR("stbtt_InitFont failed for %s", ttf_path);
-        free(ttf_data);
-        return NK_ERROR_IO;
-    }
-
-    float scale = stbtt_ScaleForPixelHeight(&font, font_size);
-
-    int ascent_i, descent_i, line_gap_i;
-    stbtt_GetFontVMetrics(&font, &ascent_i, &descent_i, &line_gap_i);
-    atlas->ascent   = (float)ascent_i * scale;
-    atlas->descent  = (float)descent_i * scale;
-    atlas->line_gap = (float)line_gap_i * scale;
+    atlas->ascent    = ttf.ascent;
+    atlas->descent   = ttf.descent;
+    atlas->line_gap  = ttf.line_gap;
     atlas->font_size = font_size;
 
     // Allocate atlas bitmap
     atlas->atlas_size = NK_FONT_ATLAS_SIZE;
     atlas->bitmap = calloc(atlas->atlas_size * atlas->atlas_size, 1);
+    if (!atlas->bitmap) {
+        nk_ttf_destroy(&ttf);
+        return NK_ERROR_OUT_OF_MEMORY;
+    }
 
-    // Pack glyphs using stb_rect_pack
-    stbrp_context rp_ctx;
-    stbrp_node *rp_nodes = calloc(atlas->atlas_size, sizeof(stbrp_node));
-    stbrp_init_target(&rp_ctx, (int)atlas->atlas_size, (int)atlas->atlas_size,
-                      rp_nodes, (int)atlas->atlas_size);
+    // Step 2: Initialize rectangle packer
+    NkRectPacker packer;
+    r = nk_rect_packer_init(&packer, atlas->atlas_size);
+    if (r != NK_SUCCESS) {
+        free(atlas->bitmap);
+        nk_ttf_destroy(&ttf);
+        return r;
+    }
 
     atlas->glyph_count = CHAR_COUNT;
     atlas->glyphs = calloc(CHAR_COUNT, sizeof(NkGlyphInfo));
+    if (!atlas->glyphs) {
+        nk_rect_packer_destroy(&packer);
+        free(atlas->bitmap);
+        nk_ttf_destroy(&ttf);
+        return NK_ERROR_OUT_OF_MEMORY;
+    }
 
-    // Rasterize SDF for each glyph and pack into atlas
+    // Step 3: Rasterize SDF for each glyph and pack into atlas
     for (uint32_t i = 0; i < CHAR_COUNT; i++) {
         uint32_t cp = FIRST_CHAR + i;
-        int w, h, xoff, yoff;
-
-        uint8_t *sdf = stbtt_GetCodepointSDF(&font, scale, (int)cp,
-                                               NK_FONT_SDF_PADDING,
-                                               NK_FONT_SDF_ONEDGE,
-                                               NK_FONT_SDF_SCALE,
-                                               &w, &h, &xoff, &yoff);
 
         atlas->glyphs[i].codepoint = cp;
-        atlas->glyphs[i].xoff = (float)xoff;
-        atlas->glyphs[i].yoff = (float)yoff;
+        atlas->glyphs[i].xadvance  = nk_ttf_get_advance(&ttf, cp);
 
-        int advance, lsb;
-        stbtt_GetCodepointHMetrics(&font, (int)cp, &advance, &lsb);
-        atlas->glyphs[i].xadvance = (float)advance * scale;
-
-        if (!sdf || w == 0 || h == 0) {
+        // Rasterize SDF bitmap for this glyph
+        NkSdfGlyph sdf;
+        if (!nk_sdf_rasterize_glyph(&sdf, ttf.font_info, ttf.scale, cp,
+                                     NK_FONT_SDF_PADDING,
+                                     NK_FONT_SDF_ONEDGE,
+                                     NK_FONT_SDF_SCALE)) {
             atlas->glyphs[i].packed = 0;
-            if (sdf) stbtt_FreeSDF(sdf, NULL);
             continue;
         }
 
-        // Pack rect
-        stbrp_rect rc = { .id = (int)i, .w = (stbrp_coord)w, .h = (stbrp_coord)h };
-        stbrp_pack_rects(&rp_ctx, &rc, 1);
+        atlas->glyphs[i].xoff = (float)sdf.xoff;
+        atlas->glyphs[i].yoff = (float)sdf.yoff;
+
+        // Pack the glyph rectangle into the atlas
+        NkPackedRect rc = nk_rect_packer_pack(&packer, sdf.width, sdf.height);
 
         if (rc.was_packed) {
             // Copy SDF bitmap into atlas
-            for (int row = 0; row < h; row++) {
+            for (int row = 0; row < sdf.height; row++) {
                 memcpy(atlas->bitmap + (rc.y + row) * atlas->atlas_size + rc.x,
-                       sdf + row * w, (size_t)w);
+                       sdf.sdf_bitmap + row * sdf.width, (size_t)sdf.width);
             }
             float inv = 1.0f / (float)atlas->atlas_size;
             atlas->glyphs[i].x0 = (float)rc.x * inv;
             atlas->glyphs[i].y0 = (float)rc.y * inv;
-            atlas->glyphs[i].x1 = (float)(rc.x + w) * inv;
-            atlas->glyphs[i].y1 = (float)(rc.y + h) * inv;
+            atlas->glyphs[i].x1 = (float)(rc.x + sdf.width) * inv;
+            atlas->glyphs[i].y1 = (float)(rc.y + sdf.height) * inv;
             atlas->glyphs[i].packed = 1;
         }
 
-        stbtt_FreeSDF(sdf, NULL);
+        nk_sdf_free(&sdf);
     }
 
-    free(rp_nodes);
-    free(ttf_data);
+    nk_rect_packer_destroy(&packer);
+    nk_ttf_destroy(&ttf);
 
     NK_LOG_INFO("Font atlas built: %s, size=%.0f, glyphs=%u, atlas=%ux%u",
                 ttf_path, font_size, atlas->glyph_count,
@@ -136,4 +123,3 @@ void nk_font_atlas_destroy(NkFontAtlas *atlas) {
     free(atlas->glyphs);
     memset(atlas, 0, sizeof(*atlas));
 }
-

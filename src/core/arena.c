@@ -9,12 +9,20 @@
 #include <string.h>
 #include <sys/mman.h>
 
+// Add other POSIX OS support:
+#if !defined(MAP_ANONYMOUS) && defined(MAP_ANON)
+#  define MAP_ANONYMOUS MAP_ANON
+#elif !defined(MAP_ANONYMOUS)
+#  define MAP_ANONYMOUS 0x1000
+#endif
+
 // ── Internal ──
 
 static NkArenaBlock *arena_alloc_block(size_t capacity) {
     size_t total = sizeof(NkArenaBlock) + capacity;
     NkArenaBlock *block = mmap(NULL, total, PROT_READ | PROT_WRITE,
                                MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+
     if (block == MAP_FAILED) return NULL;
     block->next     = NULL;
     block->capacity = capacity;
@@ -40,7 +48,6 @@ void nk_arena_init(NkArena *a, size_t block_size) {
 void *nk_arena_alloc(NkArena *a, size_t size, size_t align) {
     if (align < 1) align = 1;
 
-    // Try current block
     if (a->current) {
         size_t offset = (a->current->used + align - 1) & ~(align - 1);
         if (offset + size <= a->current->capacity) {
@@ -50,9 +57,8 @@ void *nk_arena_alloc(NkArena *a, size_t size, size_t align) {
         }
     }
 
-    // Need a new block
     size_t cap = a->block_size;
-    if (size + align > cap) cap = size + align; // oversized alloc
+    if (size + align > cap) cap = size + align;
 
     NkArenaBlock *block = arena_alloc_block(cap);
     if (!block) return NULL;
@@ -95,4 +101,3 @@ void nk_arena_destroy(NkArena *a) {
     a->first   = NULL;
     a->current = NULL;
 }
-

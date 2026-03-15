@@ -1,2 +1,7 @@
 *.h linguist-language=C
 *.c linguist-language=C
+
+include/stb/* linguist-vendored
+include/volk/* linguist-vendored
+include/luajit/* linguist-vendored
+include/nanosvg/* linguist-vendored
