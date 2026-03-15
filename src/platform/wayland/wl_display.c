@@ -142,7 +142,7 @@ static void seat_capabilities(void *data, struct wl_seat *seat, uint32_t caps) {
         NK_LOG_DEBUG("Wayland pointer ready");
     } else if (!(caps & WL_SEAT_CAPABILITY_POINTER) && wl->pointer) {
         wl_pointer_destroy(wl->pointer);
-        wl->pointer = NULL;
+        wl->pointer = nullptr;
     }
 }
 
@@ -210,7 +210,7 @@ static const struct wl_registry_listener registry_listener = {
 NkResult nk_wl_display_connect(NkWlDisplay *wl) {
     memset(wl, 0, sizeof(*wl));
 
-    wl->display = wl_display_connect(NULL);
+    wl->display = wl_display_connect(nullptr);
     if (!wl->display) {
         NK_LOG_ERROR("Failed to connect to Wayland display");
         return NK_ERROR_WAYLAND;
@@ -322,7 +322,7 @@ static void xdg_toplevel_configure(void *data, struct xdg_toplevel *toplevel,
     (void)toplevel;
 
     win->fullscreen = false;
-    uint32_t *state = NULL;
+    uint32_t *state = nullptr;
     wl_array_for_each(state, states) {
         if (*state == XDG_TOPLEVEL_STATE_FULLSCREEN) {
             win->fullscreen = true;

@@ -20,11 +20,11 @@
 
 static NkArenaBlock *arena_alloc_block(size_t capacity) {
     size_t total = sizeof(NkArenaBlock) + capacity;
-    NkArenaBlock *block = mmap(NULL, total, PROT_READ | PROT_WRITE,
+    NkArenaBlock *block = mmap(nullptr, total, PROT_READ | PROT_WRITE,
                                MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
-    if (block == MAP_FAILED) return NULL;
-    block->next     = NULL;
+    if (block == MAP_FAILED) return nullptr;
+    block->next     = nullptr;
     block->capacity = capacity;
     block->used     = 0;
     return block;
@@ -41,8 +41,8 @@ static void arena_free_block(NkArenaBlock *block) {
 
 void nk_arena_init(NkArena *a, size_t block_size) {
     a->block_size = block_size > 0 ? block_size : NK_ARENA_DEFAULT_BLOCK_SIZE;
-    a->first      = NULL;
-    a->current    = NULL;
+    a->first      = nullptr;
+    a->current    = nullptr;
 }
 
 void *nk_arena_alloc(NkArena *a, size_t size, size_t align) {
@@ -61,9 +61,9 @@ void *nk_arena_alloc(NkArena *a, size_t size, size_t align) {
     if (size + align > cap) cap = size + align;
 
     NkArenaBlock *block = arena_alloc_block(cap);
-    if (!block) return NULL;
+    if (!block) return nullptr;
 
-    block->next = NULL;
+    block->next = nullptr;
     if (a->current) {
         a->current->next = block;
     } else {
@@ -98,6 +98,6 @@ void nk_arena_destroy(NkArena *a) {
         arena_free_block(b);
         b = next;
     }
-    a->first   = NULL;
-    a->current = NULL;
+    a->first   = nullptr;
+    a->current = nullptr;
 }

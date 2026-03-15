@@ -24,10 +24,10 @@ static size_t next_pow2(size_t v) {
 NkRingBuffer *nk_ring_create(size_t elem_size, size_t count) {
     size_t cap = next_pow2(count);
     NkRingBuffer *rb = calloc(1, sizeof(NkRingBuffer));
-    if (!rb) return NULL;
+    if (!rb) return nullptr;
 
     rb->data      = calloc(cap, elem_size);
-    if (!rb->data) { free(rb); return NULL; }
+    if (!rb->data) { free(rb); return nullptr; }
 
     rb->capacity  = cap;
     rb->elem_size = elem_size;
