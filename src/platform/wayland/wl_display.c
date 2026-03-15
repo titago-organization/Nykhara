@@ -11,6 +11,7 @@
 
 #include <string.h>
 #include <stdlib.h>
+#include <poll.h>
 
 // ──────────────────────────── wl_output listener ────────────────────────────
 
@@ -239,14 +240,33 @@ NkResult nk_wl_display_connect(NkWlDisplay *wl) {
 }
 
 NkResult nk_wl_display_dispatch(NkWlDisplay *wl) {
-    // Flush outgoing requests first
+    // Drain any events already decoded in the client-side queue
+    // before attempting to prepare_read (required by Wayland API).
+    while (wl_display_prepare_read(wl->display) != 0) {
+        wl_display_dispatch_pending(wl->display);
+    }
+
+    // Flush outgoing requests
     if (wl_display_flush(wl->display) < 0) {
+        wl_display_cancel_read(wl->display);
         NK_LOG_ERROR("Wayland flush error");
         wl->running = false;
         return NK_ERROR_WAYLAND;
     }
 
-    // Dispatch any already-pending events (non-blocking)
+    // Poll the Wayland fd for incoming data (non-blocking, timeout=0)
+    struct pollfd pfd = { .fd = wl->fd, .events = POLLIN };
+    int ret = poll(&pfd, 1, 0);
+
+    if (ret > 0) {
+        // Data available — read events from the socket
+        wl_display_read_events(wl->display);
+    } else {
+        // No data or error — cancel the read lock
+        wl_display_cancel_read(wl->display);
+    }
+
+    // Dispatch any newly-decoded events
     wl_display_dispatch_pending(wl->display);
 
     return NK_SUCCESS;

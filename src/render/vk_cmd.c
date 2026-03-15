@@ -99,7 +99,6 @@ NkResult nk_frame_begin(NkVkContext *vk, NkSwapchain *sc,
                          uint32_t *out_image) {
     // Wait for this frame slot's previous submission
     vkWaitForFences(vk->device, 1, &frame->in_flight, VK_TRUE, UINT64_MAX);
-    vkResetFences(vk->device, 1, &frame->in_flight);
 
     // Pick acquire semaphore round-robin (we don't know which image yet)
     VkSemaphore acquire_sem = sync->acquire_sems[sync->acquire_index % sync->acquire_count];
@@ -107,9 +106,12 @@ NkResult nk_frame_begin(NkVkContext *vk, NkSwapchain *sc,
 
     VkResult vr = vkAcquireNextImageKHR(vk->device, sc->swapchain, UINT64_MAX,
                                          acquire_sem, VK_NULL_HANDLE, out_image);
-    if (vr == VK_ERROR_OUT_OF_DATE_KHR || vr == VK_SUBOPTIMAL_KHR) {
+    if (vr != VK_SUCCESS && vr != VK_SUBOPTIMAL_KHR) {
         return NK_ERROR_VULKAN;
     }
+
+    // Now that acquiring succeeded, we commit to the frame and reset the fence
+    vkResetFences(vk->device, 1, &frame->in_flight);
 
     // Store the acquire semaphore for frame_end to wait on
     sync->_last_acquire_sem = acquire_sem;
